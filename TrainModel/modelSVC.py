@@ -10,9 +10,9 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 import matplotlib.pyplot as plt
 
 
-def load_images_from_folder(folder_path):
-    images = []
-    labels = []
+def load_datasets_from_folder(folder_path):
+    X = []
+    y = []
 
     # Duyệt qua các thư mục con (0-9)
     for label in os.listdir(folder_path):
@@ -24,23 +24,27 @@ def load_images_from_folder(folder_path):
                 # Đọc ảnh bằng cv2
                 image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
                 if image is not None:
-                    # Resize về kích thước cố định (ví dụ 28x28)
-                    image = cv2.resize(image, (28, 28))
-                    # Chuẩn hóa pixel về khoảng [0,1]
-                    image = image / 255.0
-                    # Làm phẳng ảnh thành vector
-                    image = image.flatten()
-                    images.append(image)
-                    labels.append(int(label))
-
-    return np.array(images), np.array(labels)
+                    X.append(transform_image(image))
+                    y.append(int(label))
+    return np.array(X), y
 
 
-def normalize_data(X_train, X_test):
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    return X_train_scaled, X_test_scaled
+def transform_image(image):
+    x = cv2.resize(image, (28, 28)).flatten() / 255.0
+    return x
+
+
+def normalize_data(images, s: StandardScaler = None):
+    x_scaled = s.transform(images)
+    return x_scaled
+
+
+def fit_scaler(x_train):
+    s = StandardScaler()
+    s.fit(x_train)
+    with open("TrainModel/ModelSVC/Model/scaler_no_pca.pkl", "wb") as f:
+        pickle.dump(s, f)
+    return s
 
 
 def shuffle_data(X, y):
@@ -64,27 +68,6 @@ def visualize_samples(X, y, num_samples=10, title="Sample Images"):
             img = X[idx].reshape(28, 28)  # Reshape về ảnh 28x28
             plt.imshow(img, cmap="gray")
             plt.axis("off")
-
-    plt.tight_layout()
-    plt.show()
-
-
-def visualize_mean_images(X, y):
-    """
-    Hiển thị ảnh trung bình của mỗi chữ số
-    """
-    plt.figure(figsize=(15, 2))
-    plt.suptitle("Mean Images for Each Digit")
-
-    for digit in range(10):
-        plt.subplot(1, 10, digit + 1)
-        # Lấy tất cả ảnh của chữ số hiện tại
-        digit_images = X[y == digit]
-        # Tính trung bình
-        mean_image = np.mean(digit_images, axis=0).reshape(28, 28)
-        plt.imshow(mean_image, cmap="gray")
-        plt.title(f"Digit {digit}")
-        plt.axis("off")
 
     plt.tight_layout()
     plt.show()
@@ -177,7 +160,7 @@ def evaluate_model(
     model,
     X_test,
     y_test,
-    filename="TrainModel/ModelSVC/Evaluation/model_evaluation.txt",
+    filename="TrainModel/ModelSVC/Evaluation/model_evaluation_no_pca.txt",
 ):
     """Đánh giá mô hình SVM"""
     y_pred = model.predict(X_test)
@@ -230,53 +213,56 @@ def visualize_confusion_matrix(y_test, y_pred):
                 verticalalignment="center",
             )
 
-    plt.savefig("TrainModel/ModelSVC/Evaluation/confusion_matrix.png")
+    plt.savefig("TrainModel/ModelSVC/Evaluation/confusion_matrix_no_pca.png")
     plt.show()
 
 
-# Load dữ liệu training và testing
-print("Loading training data...")
-X_train, y_train = load_images_from_folder("TrainModel/Dataset/training")
-print("Loading testing data...")
-X_test, y_test = load_images_from_folder("TrainModel/Dataset/testing")
+if __name__ == "__main__":
+    # Load dữ liệu training và testing
+    print("Loading training data...")
+    X_train, y_train = load_datasets_from_folder("TrainModel/Dataset/training")
+    print("Loading testing data...")
+    X_test, y_test = load_datasets_from_folder("TrainModel/Dataset/testing")
 
-# Chuẩn hóa dữ liệu
-X_train_scaled, X_test_scaled = normalize_data(X_train, X_test)
+    s: StandardScaler = fit_scaler(X_train)
 
-# Xáo trộn dữ liệu
-X_train_scaled, y_train = shuffle_data(X_train_scaled, y_train)
-X_test_scaled, y_test = shuffle_data(X_test_scaled, y_test)
+    # Chuẩn hóa dữ liệu
+    X_train_scaled = normalize_data(X_train, s)
+    X_test_scaled = normalize_data(X_test, s)
 
-# Trực quan hóa dữ liệu
-visualize_samples(X_train_scaled, y_train)
-visualize_mean_images(X_train_scaled, y_train)
+    # Xáo trộn dữ liệu
+    X_train_scaled, y_train = shuffle_data(X_train_scaled, y_train)
+    X_test_scaled, y_test = shuffle_data(X_test_scaled, y_test)
 
-# Giảm chiều dữ liệu
-X_train_pca, X_test_pca = pca_components(X_train_scaled, X_test_scaled, 100)
+    # Trực quan hóa dữ liệu
+    visualize_samples(X_train_scaled, y_train)
 
-# X_train_pca, X_test_pca = pca_components(X_train_scaled, X_test_scaled, 2)
-# visualize_pca_2_components(X_train_pca, X_test_pca, y_train, y_test)
+    # Giảm chiều dữ liệu
+    # X_train_pca, X_test_pca = pca_components(X_train_scaled, X_test_scaled, 100)
 
-# X_train_pca, X_test_pca = pca_components(X_train_scaled, X_test_scaled, 3)
-# visualize_pca_3_components(X_train_pca, X_test_pca, y_train, y_test)
+    # X_train_pca, X_test_pca = pca_components(X_train_scaled, X_test_scaled, 2)
+    # visualize_pca_2_components(X_train_pca, X_test_pca, y_train, y_test)
 
-# Trực quan hóa các thành phần PCA
-visualize_samples_pca(X_train_pca, y_train)
+    # X_train_pca, X_test_pca = pca_components(X_train_scaled, X_test_scaled, 3)
+    # visualize_pca_3_components(X_train_pca, X_test_pca, y_train, y_test)
 
-# Train mô hình SVM với kernel tuyến tính
-svm_model = train_svm(X_train_pca, y_train, kernel="linear", C=1.0)
+    # Trực quan hóa các thành phần PCA
+    # visualize_samples_pca(X_train_pca, y_train)
 
-# Save model with pickle
-with open("TrainModel/ModelSVC/Model/svm_model_mnist.pkl", "wb") as f:
-    pickle.dump(svm_model, f)
+    # Train mô hình SVM với kernel tuyến tính
+    svm_model = train_svm(X_train_scaled, y_train, kernel="linear", C=1.0)
 
-# Load model with pickle
-with open("TrainModel/ModelSVC/Model/svm_model_mnist.pkl", "rb") as f:
-    loaded_svm_model = pickle.load(f)
+    # Save model with pickle
+    with open("TrainModel/ModelSVC/Model/svm_model_mnist_no_pca.pkl", "wb") as f:
+        pickle.dump(svm_model, f)
 
-# Đánh giá mô hình
-evaluate_model(loaded_svm_model, X_test_pca, y_test)
+    # Load model with pickle
+    with open("TrainModel/ModelSVC/Model/svm_model_mnist_no_pca.pkl", "rb") as f:
+        loaded_svm_model = pickle.load(f)
 
-# Vẽ confusion matrix
-y_pred = loaded_svm_model.predict(X_test_pca)
-visualize_confusion_matrix(y_test, y_pred)
+    # Đánh giá mô hình
+    evaluate_model(loaded_svm_model, X_test_scaled, y_test)
+
+    # Vẽ confusion matrix
+    y_pred = loaded_svm_model.predict(X_test_scaled)
+    visualize_confusion_matrix(y_test, y_pred)

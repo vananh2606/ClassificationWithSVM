@@ -1,4 +1,6 @@
 import sys
+
+
 import cv2
 import numpy as np
 import pickle
@@ -12,9 +14,12 @@ from PyQt6.QtWidgets import (
     QLabel,
     QFileDialog,
     QMessageBox,
+    QComboBox,
 )
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor
 from PyQt6.QtCore import Qt, QPoint
+
+from model import MNIST_CNN, MNISTPredictor
 
 
 class DrawingCanvas(QWidget):
@@ -72,22 +77,36 @@ class DigitRecognitionApp(QMainWindow):
         self.setWindowTitle("MNIST Digit Recognition")
         self.setGeometry(100, 100, 800, 500)
 
-        # Load model và scaler
+        # Initialize models as None
+        self.svc_model = None
+        self.svc_scaler = None
+        self.cnn_predictor = None
+        self.current_model = None
+
+        # Load models
+        self.load_models()
+
+        self.setup_ui()
+
+    def load_models(self):
         try:
+            # Load SVC model
             with open(
                 "TrainModel/SVC/ModelSVC/Model/svm_model_mnist_no_pca.pkl", "rb"
             ) as f:
-                self.model = pickle.load(f)
+                self.svc_model = pickle.load(f)
             with open("TrainModel/SVC/ModelSVC/Model/scaler_no_pca.pkl", "rb") as f:
-                self.scaler = pickle.load(f)
-            print("Model và Scaler đã được load thành công!")
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Lỗi", f"Không thể load model hoặc scaler: {str(e)}"
-            )
-            sys.exit(1)
+                self.svc_scaler = pickle.load(f)
 
-        self.setup_ui()
+            # Load CNN model
+            self.cnn_predictor = MNISTPredictor("TrainModel/CNN/ModelCNN/modelDL.pth")
+
+            # Set default model
+            self.current_model = "SVC"
+            print("Models loaded successfully!")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not load models: {str(e)}")
+            sys.exit(1)
 
     def setup_ui(self):
         # Widget trung tâm
@@ -99,9 +118,53 @@ class DigitRecognitionApp(QMainWindow):
         main_layout.setSpacing(30)  # Khoảng cách giữa các layout
         main_layout.setContentsMargins(20, 20, 20, 20)  # Margin cho layout chính
 
+        # Model selection combo box
+        model_layout = QHBoxLayout()
+        model_label = QLabel("Select Model:")
+        model_label.setStyleSheet(
+            """
+            QLabel {
+                font-size: 14px;
+                font-weight: bold;
+                color: #2c3e50;
+            }
+        """
+        )
+
+        self.model_combo = QComboBox()
+        self.model_combo.addItems(["SVC Model", "CNN Model"])
+        self.model_combo.setStyleSheet(
+            """
+            QComboBox {
+                background-color: white;
+                border: 2px solid #3498db;
+                border-radius: 5px;
+                padding: 5px;
+                min-width: 150px;
+            }
+            QComboBox:hover {
+                border-color: #2980b9;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                image: url(down_arrow.png);
+                width: 12px;
+                height: 12px;
+            }
+        """
+        )
+        self.model_combo.currentTextChanged.connect(self.change_model)
+
+        model_layout.addWidget(model_label)
+        model_layout.addWidget(self.model_combo)
+        model_layout.addStretch()
+
         # Layout bên trái cho vẽ
         left_layout = QVBoxLayout()
         left_layout.setSpacing(15)  # Khoảng cách giữa các widget
+        left_layout.addLayout(model_layout)
 
         # Title cho phần vẽ
         draw_title = QLabel("Vẽ số cần nhận dạng")
@@ -225,6 +288,11 @@ class DigitRecognitionApp(QMainWindow):
         main_layout.addLayout(left_layout)
         main_layout.addLayout(right_layout)
 
+    def change_model(self, model_name):
+        self.current_model = "SVC" if "SVC" in model_name else "CNN"
+        # Clear current results
+        self.clear_drawing()
+
     def clear_drawing(self):
         self.canvas.clear_canvas()
         self.processed_label.clear()
@@ -232,22 +300,20 @@ class DigitRecognitionApp(QMainWindow):
         self.result_label.setText("Kết quả dự đoán: ")
 
     def predict_drawing(self):
-        # Lấy ảnh từ canvas
+        # Get image from canvas
         canvas_image = self.canvas.get_image()
-
-        # Chuyển QImage thành numpy array
         buffer = canvas_image.bits().asarray(canvas_image.sizeInBytes())
         img_array = np.frombuffer(buffer, dtype=np.uint8).reshape(
             (canvas_image.height(), canvas_image.width())
         )
 
-        # Xử lý và dự đoán
-        prediction, processed_image = self.process_and_predict(img_array)
+        if self.current_model == "SVC":
+            prediction, processed_image = self.predict_svc(img_array)
+        else:
+            prediction, processed_image = self.predict_cnn(img_array)
 
-        # Hiển thị ảnh đã xử lý
+        # Display results
         self.display_processed_image(processed_image)
-
-        # Hiển thị kết quả
         self.display_prediction(prediction)
 
     def transform_image(self, image):
@@ -258,31 +324,67 @@ class DigitRecognitionApp(QMainWindow):
         X_scaled = scaler.transform(images)
         return X_scaled
 
-    def process_and_predict(self, image):
-        # Nếu ảnh là RGB, chuyển sang grayscale
+    # def process_and_predict(self, image):
+    #     # Nếu ảnh là RGB, chuyển sang grayscale
+    #     if len(image.shape) == 3:
+    #         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    #     else:
+    #         gray = image
+
+    #     # Kiểm tra xem ảnh có phải nền trắng chữ đen không
+    #     white_pixels = np.sum(gray == 255)
+    #     black_pixels = np.sum(gray == 0)
+
+    #     # Nếu số pixel trắng nhiều hơn pixel đen (nền trắng chữ đen)
+    #     if white_pixels > black_pixels:
+    #         # Đảo ngược ảnh để chuyển thành nền đen chữ trắng
+    #         processed = cv2.bitwise_not(gray)
+    #     else:
+    #         processed = gray
+
+    #     x = self.transform_image(processed)
+    #     x = self.normalize_data(np.array([x]), self.scaler)
+
+    #     # Dự đoán
+    #     prediction = self.model.predict(x)[0]
+
+    #     return prediction, processed
+
+    def predict_svc(self, image):
         if len(image.shape) == 3:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
             gray = image
 
-        # Kiểm tra xem ảnh có phải nền trắng chữ đen không
+        # Check if image has white background
         white_pixels = np.sum(gray == 255)
         black_pixels = np.sum(gray == 0)
 
-        # Nếu số pixel trắng nhiều hơn pixel đen (nền trắng chữ đen)
         if white_pixels > black_pixels:
-            # Đảo ngược ảnh để chuyển thành nền đen chữ trắng
             processed = cv2.bitwise_not(gray)
         else:
             processed = gray
 
+        # Transform and normalize
         x = self.transform_image(processed)
-        x = self.normalize_data(np.array([x]), self.scaler)
+        x = self.normalize_data(np.array([x]), self.svc_scaler)
+        self.current_features = x
 
-        # Dự đoán
-        prediction = self.model.predict(x)[0]
-
+        # Predict
+        prediction = self.svc_model.predict(x)[0]
         return prediction, processed
+
+    def predict_cnn(self, image):
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+
+        # Get prediction using CNN predictor
+        result = self.cnn_predictor.predict(gray)
+        self.current_prediction = result
+
+        return result["prediction"], gray
 
     def display_processed_image(self, processed_image):
         h, w = processed_image.shape
@@ -296,15 +398,20 @@ class DigitRecognitionApp(QMainWindow):
         self.processed_label.setPixmap(QPixmap.fromImage(q_image))
 
     def display_prediction(self, prediction):
-        try:
-            proba = self.model.predict_proba(self.current_features)
-            confidence = proba[0][prediction] * 100
+        if self.current_model == "SVC":
+            try:
+                proba = self.svc_model.predict_proba(self.current_features)
+                confidence = proba[0][prediction] * 100
+                self.result_label.setText(
+                    f"Prediction (SVC): {prediction}\nConfidence: {confidence:.2f}%"
+                )
+            except Exception as e:
+                self.result_label.setText(f"Prediction (SVC): {prediction}")
+        else:
+            confidence = self.current_prediction["confidence"]
             self.result_label.setText(
-                f"Kết quả dự đoán: {prediction}\nĐộ tin cậy: {confidence:.2f}%"
+                f"Prediction (CNN): {prediction}\nConfidence: {confidence:.2f}%"
             )
-        except Exception as e:
-            print(f"Không thể tính độ tin cậy: {e}")
-            self.result_label.setText(f"Kết quả dự đoán: {prediction}")
 
     def load_image(self):
         file_name, _ = QFileDialog.getOpenFileName(
@@ -318,7 +425,10 @@ class DigitRecognitionApp(QMainWindow):
                     raise Exception("Không thể đọc ảnh")
 
                 # Xử lý ảnh và dự đoán
-                prediction, processed_image = self.process_and_predict(image)
+                if self.current_model == "SVC":
+                    prediction, processed_image = self.predict_svc(image)
+                else:
+                    prediction, processed_image = self.predict_cnn(image)
 
                 # Vẽ ảnh lên canvas
                 self.draw_image_on_canvas(processed_image)

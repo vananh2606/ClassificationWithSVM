@@ -52,7 +52,7 @@ def test_single_image(model_path, image_path):
             )
 
         # Load và xử lý ảnh
-        image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        image = load_and_preprocess_image(image_path)
         x = transform_image(image)
         x = normalize_data(np.array([x]), scaler)
 
@@ -130,7 +130,7 @@ def test_all_images_in_folder(model_path, test_folder):
 if __name__ == "__main__":
     # Đường dẫn đến model và folder test
     MODEL_PATH = "TrainModel/SVC/ModelSVC/Model/svm_model_mnist_no_pca.pkl"
-    TEST_FOLDER = "TrainModel/Dataset/testing"
+    TEST_FOLDER = "src/resources/"
 
     # Test tất cả ảnh trong folder
     results = test_all_images_in_folder(MODEL_PATH, TEST_FOLDER)

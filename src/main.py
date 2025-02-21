@@ -41,6 +41,12 @@ class DrawingCanvas(QWidget):
     def get_image(self):
         return self.image
 
+    def save_canvas_image(self, file_path):
+        """Save the current canvas image to a file"""
+        if self.image.save(file_path):
+            return True
+        return False
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.drawing = True
@@ -99,7 +105,9 @@ class DigitRecognitionApp(QMainWindow):
                 self.svc_scaler = pickle.load(f)
 
             # Load CNN model
-            self.cnn_predictor = MNISTPredictor("TrainModel/CNN/ModelCNN/modelDL.pth")
+            self.cnn_predictor = MNISTPredictor(
+                "TrainModel/CNN/ModelCNN/modelDL_augment.pth"
+            )
 
             # Set default model
             self.current_model = "SVC"
@@ -231,6 +239,15 @@ class DigitRecognitionApp(QMainWindow):
         self.load_button.clicked.connect(self.load_image)
         button_layout.addWidget(self.load_button)
 
+        self.save_button = QPushButton("Lưu ảnh")
+        self.save_button.setStyleSheet(
+            button_style.replace("#3498db", "#8e44ad")
+            .replace("#2980b9", "#7d3c98")
+            .replace("#2473a6", "#6c3483")
+        )
+        self.save_button.clicked.connect(self.save_drawing)
+        button_layout.addWidget(self.save_button)
+
         left_layout.addLayout(button_layout)
 
         # Layout bên phải cho kết quả
@@ -290,8 +307,30 @@ class DigitRecognitionApp(QMainWindow):
 
     def change_model(self, model_name):
         self.current_model = "SVC" if "SVC" in model_name else "CNN"
-        # Clear current results
-        self.clear_drawing()
+
+        # Nếu có ảnh trên canvas, thực hiện dự đoán lại với model mới
+        if not self.canvas.image.isNull():
+            # Lấy ảnh từ canvas
+            canvas_image = self.canvas.get_image()
+            buffer = canvas_image.bits().asarray(canvas_image.sizeInBytes())
+            img_array = np.frombuffer(buffer, dtype=np.uint8).reshape(
+                (canvas_image.height(), canvas_image.width())
+            )
+
+            # Thực hiện dự đoán với model mới
+            if self.current_model == "SVC":
+                prediction, processed_image = self.predict_svc(img_array)
+            else:
+                prediction, processed_image = self.predict_cnn(img_array)
+
+            # Hiển thị kết quả mới
+            self.display_processed_image(processed_image)
+            self.display_prediction(prediction)
+        else:
+            # Nếu không có ảnh, reset các label
+            self.processed_label.clear()
+            self.processed_label.setText("Ảnh đã xử lý")
+            self.result_label.setText("Vui lòng vẽ số hoặc chọn ảnh để nhận dạng")
 
     def clear_drawing(self):
         self.canvas.clear_canvas()
@@ -380,11 +419,20 @@ class DigitRecognitionApp(QMainWindow):
         else:
             gray = image
 
+        # Check if image has white background
+        white_pixels = np.sum(gray == 255)
+        black_pixels = np.sum(gray == 0)
+
+        if white_pixels > black_pixels:
+            processed = cv2.bitwise_not(gray)
+        else:
+            processed = gray
+
         # Get prediction using CNN predictor
-        result = self.cnn_predictor.predict(gray)
+        result = self.cnn_predictor.predict(processed)
         self.current_prediction = result
 
-        return result["prediction"], gray
+        return result["prediction"], processed
 
     def display_processed_image(self, processed_image):
         h, w = processed_image.shape
@@ -403,14 +451,14 @@ class DigitRecognitionApp(QMainWindow):
                 proba = self.svc_model.predict_proba(self.current_features)
                 confidence = proba[0][prediction] * 100
                 self.result_label.setText(
-                    f"Prediction (SVC): {prediction}\nConfidence: {confidence:.2f}%"
+                    f"Dự đoán (SVC): {prediction}\nĐộ tin cậy: {confidence:.2f}%"
                 )
             except Exception as e:
-                self.result_label.setText(f"Prediction (SVC): {prediction}")
+                self.result_label.setText(f"Dự đoán (SVC): {prediction}")
         else:
             confidence = self.current_prediction["confidence"]
             self.result_label.setText(
-                f"Prediction (CNN): {prediction}\nConfidence: {confidence:.2f}%"
+                f"Dự đoán (CNN): {prediction}\nĐộ tin cậy: {confidence:.2f}%"
             )
 
     def load_image(self):
@@ -441,6 +489,38 @@ class DigitRecognitionApp(QMainWindow):
 
             except Exception as e:
                 QMessageBox.critical(self, "Lỗi", f"Lỗi khi xử lý ảnh: {str(e)}")
+
+    def save_drawing(self):
+        """Save the current drawing to a file"""
+        if not self.canvas.image:
+            QMessageBox.warning(self, "Cảnh báo", "Không có ảnh để lưu!")
+            return
+
+        try:
+            file_name, _ = QFileDialog.getSaveFileName(
+                self,
+                "Lưu ảnh",
+                "",
+                "PNG Files (*.png);;JPEG Files (*.jpg *.jpeg);;All Files (*.*)",
+            )
+
+            if file_name:
+                # Thêm phần mở rộng .png nếu người dùng không nhập
+                if not any(
+                    file_name.endswith(ext) for ext in [".png", ".jpg", ".jpeg"]
+                ):
+                    file_name += ".png"
+
+                # Lưu ảnh
+                if self.canvas.save_canvas_image(file_name):
+                    QMessageBox.information(
+                        self, "Thành công", "Ảnh đã được lưu thành công!"
+                    )
+                else:
+                    raise Exception("Không thể lưu ảnh")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Lỗi", f"Lỗi khi lưu ảnh: {str(e)}")
 
     def draw_image_on_canvas(self, image):
         # Resize về kích thước canvas

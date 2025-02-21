@@ -65,6 +65,8 @@ def train_model(
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            torch.save(model.state_dict(), "TrainModel/CNN/ModelCNN/modelDL.pth")
+            torch.save(
+                model.state_dict(), "TrainModel/CNN/ModelCNN/modelDL_augment.pth"
+            )
 
     return train_losses, val_losses, train_accs, val_accs

@@ -161,3 +161,5 @@ cython_debug/
 
 TrainModel/Dataset
 TrainModel/Dataset/
+
+src/resources/

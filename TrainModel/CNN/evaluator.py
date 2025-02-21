@@ -36,5 +36,5 @@ def plot_confusion_matrix(y_true, y_pred):
     plt.xlabel("Predicted")
     plt.ylabel("True")
     plt.title("Confusion Matrix")
-    plt.savefig("TrainModel/CNN/ModelCNN/confusion_matrix.png")
+    plt.savefig("TrainModel/CNN/ModelCNN/confusion_matrix_augment.png")
     plt.show()

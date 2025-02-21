@@ -21,7 +21,7 @@ def main():
     VAL_PATH = "TrainModel/Dataset/validation"
     TEST_PATH = "TrainModel/Dataset/testing"
     BATCH_SIZE = 32
-    NUM_EPOCHS = 5
+    NUM_EPOCHS = 10
     LEARNING_RATE = 0.001
 
     # Xác định device
@@ -30,7 +30,14 @@ def main():
 
     # Định nghĩa transforms
     transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
+        [
+            transforms.ToTensor(),
+            transforms.RandomRotation(15),
+            transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+            transforms.RandomResizedCrop(28, scale=(0.8, 1.2)),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2),
+            transforms.Normalize((0.5,), (0.5,)),
+        ]
     )
 
     # Load datasets
@@ -59,7 +66,7 @@ def main():
     plot_training_results(train_losses, val_losses, train_accs, val_accs)
 
     # Load model tốt nhất và đánh giá
-    model.load_state_dict(torch.load("TrainModel/CNN/ModelCNN/modelDL.pth"))
+    model.load_state_dict(torch.load("TrainModel/CNN/ModelCNN/modelDL_augment.pth"))
     evaluate_model(model, test_loader, device)
 
 

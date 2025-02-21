@@ -21,5 +21,5 @@ def plot_training_results(train_losses, val_losses, train_accs, val_accs):
     plt.title("Training and Validation Accuracy")
 
     plt.tight_layout()
-    plt.savefig("TrainModel/CNN/ModelCNN/training_results.png")
+    plt.savefig("TrainModel/CNN/ModelCNN/training_results_augment.png")
     plt.show()
